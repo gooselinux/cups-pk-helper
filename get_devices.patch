@@ -1,0 +1,299 @@
+--- cups-pk-helper-0.0.4/src/cups.c	2009-03-04 13:41:53.000000000 +0100
++++ cups-pk-helper-0.0.4/src/cups.c	2009-08-13 12:15:47.000000000 +0200
+@@ -58,7 +58,7 @@
+      getPPDs
+      getServerPPD
+      getDocument
+-     getDevices
++~!+* getDevices
+      getJobs
+      getJobAttributes
+ ~!+* cancelJob
+@@ -1807,6 +1807,192 @@ cph_cups_job_get_status (CphCups    *cup
+         return status;
+ }
+ 
++struct _CphCupsGetDevices {
++        int         iter;
++        GHashTable *hash;
++};
++
++static void
++_cph_cups_get_devices_cb (const char *device_class,
++                          const char *device_id,
++                          const char *device_info,
++                          const char *device_make_and_model,
++                          const char *device_uri,
++                          const char *device_location,
++                          void       *user_data)
++{
++        struct _CphCupsGetDevices *data = user_data;
++
++        g_return_if_fail (data != NULL);
++
++        if (device_class && device_class[0] != '\0')
++                g_hash_table_replace (data->hash,
++                                      g_strdup_printf ("device-class:%d",
++                                                       data->iter),
++                                      g_strdup (device_class));
++        if (device_id && device_id[0] != '\0')
++                g_hash_table_replace (data->hash,
++                                      g_strdup_printf ("device-id:%d",
++                                                       data->iter),
++                                      g_strdup (device_id));
++        if (device_info && device_info[0] != '\0')
++                g_hash_table_replace (data->hash,
++                                      g_strdup_printf ("device-info:%d",
++                                                       data->iter),
++                                      g_strdup (device_info));
++        if (device_make_and_model && device_make_and_model[0] != '\0')
++                g_hash_table_replace (data->hash,
++                                      g_strdup_printf ("device-make-and-model:%d",
++                                                       data->iter),
++                                      g_strdup (device_make_and_model));
++        if (device_uri && device_uri[0] != '\0')
++                g_hash_table_replace (data->hash,
++                                      g_strdup_printf ("device-uri:%d",
++                                                       data->iter),
++                                      g_strdup (device_uri));
++        if (device_location && device_location[0] != '\0')
++                g_hash_table_replace (data->hash,
++                                      g_strdup_printf ("device-location:%d ",
++                                                       data->iter),
++                                      g_strdup (device_location));
++
++        data->iter++;
++}
++
++GHashTable *
++cph_cups_devices_get (CphCups    *cups,
++                      int         timeout,
++                      const char *include_schemes,
++                      const char *exclude_schemes)
++{
++        struct _CphCupsGetDevices  data;
++        char                      *error_str;
++
++        g_return_val_if_fail (CPH_IS_CUPS (cups), NULL);
++
++        data.iter = 0;
++        data.hash = g_hash_table_new_full (g_str_hash, g_str_equal,
++                                           g_free, g_free);
++
++#if (CUPS_VERSION_MAJOR == 1 && CUPS_VERSION_MINOR >= 4) || CUPS_VERSION_MAJOR > 1
++        ipp_status_t   retval;
++        int            timeout_param = CUPS_TIMEOUT_DEFAULT;
++        char          *include_schemes_param = (char *) CUPS_INCLUDE_ALL;
++        char          *exclude_schemes_param = (char *) CUPS_EXCLUDE_NONE;
++
++        if (timeout > 0)
++                timeout_param = timeout;
++
++        if (include_schemes && strlen (include_schemes) > 0)
++                include_schemes_param = g_strdup (include_schemes);
++
++        if (exclude_schemes && strlen (exclude_schemes) > 0)
++                exclude_schemes_param = g_strdup (exclude_schemes);
++
++        retval = cupsGetDevices (cups->priv->connection,
++                                 timeout_param,
++                                 include_schemes_param,
++                                 exclude_schemes_param,
++                                 _cph_cups_get_devices_cb,
++                                 &data);
++
++        g_free (include_schemes_param);
++        g_free (exclude_schemes_param);
++
++        if (retval != IPP_OK)
++                goto error;
++#else
++        ipp_t              *request;
++        const char         *resource_char;
++        ipp_t              *reply;
++        ipp_attribute_t    *attr;
++        const char         *device_class;
++        const char         *device_id;
++        const char         *device_info;
++        const char         *device_location;
++        const char         *device_make_and_model;
++        const char         *device_uri;
++
++        request = ippNewRequest (CUPS_GET_DEVICES);
++        resource_char = _cph_cups_get_resource (CPH_RESOURCE_ROOT);
++        reply = cupsDoRequest (cups->priv->connection,
++                               request, resource_char);
++
++        if (!reply)
++                goto error;
++
++        for (attr = reply->attrs; attr; attr = attr->next) {
++                while (attr && attr->group_tag != IPP_TAG_PRINTER)
++                        attr = attr->next;
++
++                if (attr == NULL)
++                        break;
++
++                device_class          = NULL;
++                device_id             = NULL;
++                device_info           = NULL;
++                device_location       = "";
++                device_make_and_model = NULL;
++                device_uri            = NULL;
++
++                while (attr && attr->group_tag == IPP_TAG_PRINTER) {
++                        g_message ("name: %s", attr->name);
++                        if (attr->name &&
++                            strcmp (attr->name, "device-class") == 0 &&
++                            attr->value_tag == IPP_TAG_KEYWORD)
++                                device_class = g_strdup (attr->values[0].string.text);
++                        else if (attr->name &&
++                            strcmp (attr->name, "device-id") == 0 &&
++                            attr->value_tag == IPP_TAG_TEXT)
++                                device_id = g_strdup (attr->values[0].string.text);
++                        else if (attr->name &&
++                            strcmp (attr->name, "device-info") == 0 &&
++                            attr->value_tag == IPP_TAG_TEXT)
++                                device_info = g_strdup (attr->values[0].string.text);
++                        else if (attr->name &&
++                            strcmp (attr->name, "device-location") == 0 &&
++                            attr->value_tag == IPP_TAG_TEXT)
++                                device_location = g_strdup (attr->values[0].string.text);
++                        else if (attr->name &&
++                            strcmp (attr->name, "device-make-and-model") == 0 &&
++                            attr->value_tag == IPP_TAG_TEXT)
++                                device_make_and_model = g_strdup (attr->values[0].string.text);
++                        else if (attr->name &&
++                            strcmp (attr->name, "device-uri") == 0 &&
++                            attr->value_tag == IPP_TAG_URI)
++                                device_uri = g_strdup (attr->values[0].string.text);
++
++                        attr = attr->next;
++                }
++
++                if (device_class && device_id && device_info && device_make_and_model &&
++                    device_uri)
++                        _cph_cups_get_devices_cb (device_class,
++                                        device_id,
++                                        device_info,
++                                        device_make_and_model,
++                                        device_uri,
++                                        device_location,
++                                        &data);
++
++                if (attr == NULL)
++                        break;
++        }
++
++        ippDelete (reply);
++#endif
++
++        return data.hash;
++
++error:
++        error_str = g_strdup ("Can not get devices.");
++        _cph_cups_set_internal_status (cups, error_str);
++        g_hash_table_destroy (data.hash);
++        g_free (error_str);
++
++        return NULL;
++}
++
+ /******************************************************
+  * Non-object functions
+  ******************************************************/
+--- cups-pk-helper-0.0.4/src/cups.h	2009-02-28 03:38:13.000000000 +0100
++++ cups-pk-helper-0.0.4/src/cups.h	2009-08-13 12:16:08.000000000 +0200
+@@ -184,6 +184,11 @@ CphJobStatus cph_cups_job_get_status (Cp
+                                       int         job_id,
+                                       const char *user);
+ 
++GHashTable *cph_cups_devices_get (CphCups    *cups,
++                                  int         timeout,
++                                  const char *include_schemes,
++                                  const char *exclude_schemes);
++
+ G_END_DECLS
+ 
+ #endif /* CPH_CUPS_H */
+--- cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.c	2009-08-13 12:14:09.000000000 +0200
++++ cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.c	2009-08-13 12:16:48.000000000 +0200
+@@ -1103,3 +1103,27 @@ cph_mechanism_job_set_hold_until (CphMec
+ 
+         return TRUE;
+ }
++
++gboolean
++cph_mechanism_devices_get (CphMechanism          *mechanism,
++                           int                    timeout,
++                           const char            *include_schemes,
++                           const char            *exclude_schemes,                           
++                           DBusGMethodInvocation *context)
++{
++        GHashTable *devices;
++
++        reset_killtimer (mechanism);
++
++        if (!_check_polkit_for_action (mechanism, context, "devices-get"))
++                return FALSE;
++
++        devices = cph_cups_devices_get (mechanism->priv->cups,
++                                        timeout,
++                                        include_schemes,
++                                        exclude_schemes);
++        _cph_mechanism_return_error_and_value (mechanism, context,
++                                               devices == NULL, devices);
++
++        return TRUE;
++}
+--- cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.h	2009-02-28 03:38:13.000000000 +0100
++++ cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.h	2009-08-13 12:17:10.000000000 +0200
+@@ -236,6 +236,13 @@ cph_mechanism_job_set_hold_until (CphMec
+                                   const char            *job_hold_until,
+                                   DBusGMethodInvocation *context);
+ 
++gboolean
++cph_mechanism_devices_get (CphMechanism          *mechanism,
++                           int                    timeout,
++                           const char            *include_schemes,
++                           const char            *exclude_schemes,                           
++                           DBusGMethodInvocation *context);
++
+ G_END_DECLS
+ 
+ #endif /* CPH_MECHANISM_H */
+--- cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.xml	2009-02-28 03:38:13.000000000 +0100
++++ cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.xml	2009-08-13 12:17:36.000000000 +0200
+@@ -192,5 +192,14 @@
+       <arg name="job_hold_until" direction="in"  type="s"/>
+       <arg name="error"          direction="out" type="s"/>
+     </method>
++
++    <method name="DevicesGet">
++      <annotation name="org.freedesktop.DBus.GLib.Async" value=""/>
++      <arg name="timeout"         direction="in"  type="i"/>
++      <arg name="include_schemes" direction="in"  type="s"/>
++      <arg name="exclude_schemes" direction="in"  type="s"/>
++      <arg name="error"           direction="out" type="s"/>
++      <arg name="devices"         direction="out" type="a{ss}"/>
++    </method>
+   </interface>
+ </node>
+--- cups-pk-helper-0.0.4/src/org.opensuse.cupspkhelper.mechanism.policy.in	2009-08-13 12:14:09.000000000 +0200
++++ cups-pk-helper-0.0.4/src/org.opensuse.cupspkhelper.mechanism.policy.in	2009-08-13 12:18:24.000000000 +0200
+@@ -86,6 +86,15 @@
+     </defaults>
+   </action>
+ 
++  <action id="org.opensuse.cupspkhelper.mechanism.devices-get">
++    <_description>Get devices</_description>
++    <_message>Privileges are required to get devices.</_message>
++    <defaults>
++      <allow_inactive>no</allow_inactive>
++      <allow_active>auth_admin_keep</allow_active>
++    </defaults>
++  </action>
++
+   <!-- Deprecated -->
+   <action id="org.opensuse.cupspkhelper.mechanism.printeraddremove">
+     <_description>Add/Remove/Edit a printer</_description>

@@ -1,0 +1,102 @@
+--- cups-pk-helper-0.0.4/src/org.opensuse.cupspkhelper.mechanism.policy.in	2009-12-02 16:43:41.000000000 +0100
++++ cups-pk-helper-0.0.4/src/org.opensuse.cupspkhelper.mechanism.policy.in	2009-12-03 14:13:47.000000000 +0100
+@@ -15,7 +15,8 @@
+     <description>Set a printer as default printer</description>
+     <message>Privileges are required to set a printer, or a class, as default printer.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -27,7 +28,8 @@
+     <description>Enable/Disable a printer</description>
+     <message>Privileges are required to enable/disable a printer, or a class.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -36,7 +38,8 @@
+     <description>Add/Remove/Edit a local printer</description>
+     <message>Privileges are required to add/remove/edit a local printer.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -45,7 +48,8 @@
+     <description>Add/Remove/Edit a remote printer</description>
+     <message>Privileges are required to add/remove/edit a remote printer.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -54,7 +58,8 @@
+     <description>Add/Remove/Edit a class</description>
+     <message>Privileges are required to add/remove/edit a class.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -63,7 +68,8 @@
+     <description>Get/Set server settings</description>
+     <message>Privileges are required to get/set server settings.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -72,7 +78,8 @@
+     <description>Restart/Cancel/Edit a job</description>
+     <message>Privileges are required to restart/cancel/edit a job.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>yes</allow_active>
+     </defaults>
+   </action>
+@@ -81,7 +88,8 @@
+     <description>Restart/Cancel/Edit a job owned by another user</description>
+     <message>Privileges are required to restart/cancel/edit a job owned by another user.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -90,7 +98,8 @@
+     <description>Get devices</description>
+     <message>Privileges are required to get devices.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+@@ -100,7 +109,8 @@
+     <description>Add/Remove/Edit a printer</description>
+     <message>Privileges are required to add/remove/edit a printer.</message>
+     <defaults>
+-      <allow_inactive>no</allow_inactive>
++      <allow_any>auth_admin</allow_any>
++      <allow_inactive>auth_admin</allow_inactive>
+       <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>

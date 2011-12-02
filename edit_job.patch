@@ -1,0 +1,26 @@
+--- cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.c	2009-08-18 18:50:55.000000000 +0200
++++ cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.c	2009-08-18 18:51:28.000000000 +0200
+@@ -995,7 +995,6 @@ cph_mechanism_job_cancel (CphMechanism  
+         switch (job_status) {
+                 case CPH_JOB_STATUS_OWNED_BY_USER: {
+                         if (!_check_polkit_for_action_v (mechanism, context,
+-                                                         "job-not-owned-edit",
+                                                          "job-edit",
+                                                          NULL))
+                                 return FALSE;
+@@ -1037,7 +1036,6 @@ cph_mechanism_job_restart (CphMechanism 
+         switch (job_status) {
+                 case CPH_JOB_STATUS_OWNED_BY_USER: {
+                         if (!_check_polkit_for_action_v (mechanism, context,
+-                                                         "job-not-owned-edit",
+                                                          "job-edit",
+                                                          NULL))
+                                 return FALSE;
+@@ -1080,7 +1078,6 @@ cph_mechanism_job_set_hold_until (CphMec
+         switch (job_status) {
+                 case CPH_JOB_STATUS_OWNED_BY_USER: {
+                         if (!_check_polkit_for_action_v (mechanism, context,
+-                                                         "job-not-owned-edit",
+                                                          "job-edit",
+                                                          NULL))
+                                 return FALSE;

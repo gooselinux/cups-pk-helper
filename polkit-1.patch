@@ -1,0 +1,260 @@
+--- cups-pk-helper-0.0.4/configure.ac	2009-03-04 13:43:52.000000000 +0100
++++ cups-pk-helper-0.0.4/configure.ac	2009-06-18 13:37:25.000000000 +0200
+@@ -42,8 +42,8 @@ fi
+ GLIB_REQUIRED=2.14.0
+ DBUS_REQUIRED=1.1.2
+ DBUS_GLIB_REQUIRED=0.74
+-POLKIT_DBUS_REQUIRED=0.8
+ GTK_REQUIRED=2.12.0
++POLKIT_REQUIRED=0.92
+ 
+ # pkg-config dependency checks
+ PKG_CHECK_MODULES(CUPS_PK, glib-2.0 >= $GLIB_REQUIRED \
+@@ -52,7 +52,7 @@ PKG_CHECK_MODULES(CUPS_PK, glib-2.0 >= $
+ 			   gthread-2.0 \
+ 			   dbus-1 >= $DBUS_REQUIRED \
+ 			   dbus-glib-1 >= $DBUS_GLIB_REQUIRED \
+-			   polkit-dbus >= $POLKIT_DBUS_REQUIRED)
++			   polkit-gobject-1 >= $POLKIT_REQUIRED)
+ AC_SUBST(CUPS_PK_CFLAGS)
+ AC_SUBST(CUPS_PK_LIBS)
+ 
+--- cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.c	2009-02-28 03:38:13.000000000 +0100
++++ cups-pk-helper-0.0.4/src/cups-pk-helper-mechanism.c	2009-06-18 14:24:13.000000000 +0200
+@@ -45,7 +45,7 @@
+ #include <dbus/dbus-glib.h>
+ #include <dbus/dbus-glib-lowlevel.h>
+ 
+-#include <polkit-dbus/polkit-dbus.h>
++#include <polkit/polkit.h>
+ 
+ #include <pwd.h>
+ 
+@@ -124,7 +124,7 @@ G_DEFINE_TYPE (CphMechanism, cph_mechani
+ struct CphMechanismPrivate
+ {
+         DBusGConnection *system_bus_connection;
+-        PolKitContext   *pol_ctx;
++        PolkitAuthority *pol_auth;
+         CphCups         *cups;
+ };
+ 
+@@ -201,59 +201,11 @@ cph_mechanism_finalize (GObject *object)
+ }
+ 
+ static gboolean
+-pk_io_watch_have_data (GIOChannel   *channel,
+-                       GIOCondition  condition,
+-                       gpointer      user_data)
+-{
+-        int            fd;
+-        PolKitContext *pk_context;
+-
+-        pk_context = user_data;
+-        fd = g_io_channel_unix_get_fd (channel);
+-        polkit_context_io_func (pk_context, fd);
+-
+-        return TRUE;
+-}
+-
+-static int
+-pk_io_add_watch (PolKitContext *pk_context,
+-                 int            fd)
+-{
+-        guint       id;
+-        GIOChannel *channel;
+-
+-        channel = g_io_channel_unix_new (fd);
+-        if (channel == NULL)
+-                return 0;
+-
+-        id = g_io_add_watch (channel, G_IO_IN,
+-                             pk_io_watch_have_data, pk_context);
+-
+-        return id;
+-}
+-
+-static void
+-pk_io_remove_watch (PolKitContext *pk_context,
+-                    int            watch_id)
+-{
+-        g_source_remove (watch_id);
+-}
+-
+-static gboolean
+ register_mechanism (CphMechanism *mechanism)
+ {
+         GError *error;
+ 
+-        mechanism->priv->pol_ctx = polkit_context_new ();
+-
+-        polkit_context_set_io_watch_functions (mechanism->priv->pol_ctx,
+-                                               pk_io_add_watch,
+-                                               pk_io_remove_watch);
+-
+-        if (!polkit_context_init (mechanism->priv->pol_ctx, NULL)) {
+-                g_critical ("cannot initialize libpolkit");
+-                return FALSE;
+-        }
++        mechanism->priv->pol_auth = polkit_authority_get ();
+ 
+         error = NULL;
+         mechanism->priv->system_bus_connection = dbus_g_bus_get (DBUS_BUS_SYSTEM,
+@@ -299,11 +251,10 @@ _check_polkit_for_action_internal (CphMe
+                                    const char             *action_method,
+                                    GError                **error)
+ {
+-        const char *sender;
++        char *sender;
+         DBusError dbus_error;
+-        PolKitCaller *pk_caller;
+-        PolKitAction *pk_action;
+-        PolKitResult pk_result;
++        PolkitSubject *pk_caller;
++        PolkitAuthorizationResult *pk_result;
+         char *action;
+ 
+         g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
+@@ -315,44 +266,30 @@ _check_polkit_for_action_internal (CphMe
+         sender = dbus_g_method_get_sender (context);
+         dbus_error_init (&dbus_error);
+ 
+-        pk_caller = polkit_caller_new_from_dbus_name (
+-                dbus_g_connection_get_connection (mechanism->priv->system_bus_connection),
+-                sender,
+-                &dbus_error);
+-
+-        if (pk_caller == NULL) {
+-                g_set_error (error,
+-                             CPH_MECHANISM_ERROR, CPH_MECHANISM_ERROR_GENERAL,
+-                             "Error getting information about caller: %s: %s",
+-                             dbus_error.name, dbus_error.message);
+-                dbus_error_free (&dbus_error);
+-                g_free (action);
+-
+-                return FALSE;
+-        }
++        pk_caller = polkit_system_bus_name_new (sender);
++        g_free (sender);
+ 
+-        pk_action = polkit_action_new ();
+-        polkit_action_set_action_id (pk_action, action);
+-        pk_result = polkit_context_is_caller_authorized (mechanism->priv->pol_ctx,
+-                                                         pk_action, pk_caller,
+-                                                         FALSE, NULL);
+-        polkit_caller_unref (pk_caller);
+-        polkit_action_unref (pk_action);
++        pk_result = polkit_authority_check_authorization_sync (mechanism->priv->pol_auth,
++                                                               pk_caller,
++                                                               action,
++                                                               NULL,
++                                                               POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION,
++                                                               NULL,
++                                                               NULL);
++        g_object_unref (pk_caller);
+ 
+-        if (pk_result != POLKIT_RESULT_YES) {
++        if (!polkit_authorization_result_get_is_authorized (pk_result)) {
+                 g_set_error (error,
+                              CPH_MECHANISM_ERROR,
+                              CPH_MECHANISM_ERROR_NOT_PRIVILEGED,
+-                             "%s %s <-- (action, result)",
+-                             action,
+-                             polkit_result_to_string_representation (pk_result));
+-                dbus_error_free (&dbus_error);
++                             "Not Authorized: %s", action);
+                 g_free (action);
+ 
+                 return FALSE;
+         }
+ 
+         g_free (action);
++        g_object_unref (pk_result);
+ 
+         return TRUE;
+ }
+--- cups-pk-helper-0.0.4/src/Makefile.am	2008-09-19 18:25:12.000000000 +0200
++++ cups-pk-helper-0.0.4/src/Makefile.am	2009-06-18 13:37:25.000000000 +0200
+@@ -46,7 +46,7 @@ BUILT_SOURCES = cups-pk-helper-mechanism
+ 
+ dbus_servicesdir = $(datadir)/dbus-1/system-services
+ dbus_confdir = $(sysconfdir)/dbus-1/system.d
+-polkitdir = $(datadir)/PolicyKit/policy
++polkitdir = $(datadir)/polkit-1/actions
+ 
+ dbus_services_in_files = org.opensuse.CupsPkHelper.Mechanism.service.in
+ polkit_in_files = org.opensuse.cupspkhelper.mechanism.policy.in
+--- cups-pk-helper-0.0.4/src/org.opensuse.cupspkhelper.mechanism.policy.in	2009-02-28 03:38:13.000000000 +0100
++++ cups-pk-helper-0.0.4/src/org.opensuse.cupspkhelper.mechanism.policy.in	2009-06-18 13:37:25.000000000 +0200
+@@ -16,7 +16,7 @@
+     <_message>Privileges are required to set a printer, or a class, as default printer.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -28,7 +28,7 @@
+     <_message>Privileges are required to enable/disable a printer, or a class.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -37,7 +37,7 @@
+     <_message>Privileges are required to add/remove/edit a local printer.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -46,7 +46,7 @@
+     <_message>Privileges are required to add/remove/edit a remote printer.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -55,7 +55,7 @@
+     <_message>Privileges are required to add/remove/edit a class.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -64,7 +64,7 @@
+     <_message>Privileges are required to get/set server settings.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -82,7 +82,7 @@
+     <_message>Privileges are required to restart/cancel/edit a job owned by another user.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ 
+@@ -92,7 +92,7 @@
+     <_message>Privileges are required to add/remove/edit a printer.</_message>
+     <defaults>
+       <allow_inactive>no</allow_inactive>
+-      <allow_active>auth_admin</allow_active>
++      <allow_active>auth_admin_keep</allow_active>
+     </defaults>
+   </action>
+ </policyconfig>
